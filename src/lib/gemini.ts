@@ -76,10 +76,6 @@ export async function generateExerciseWithAI(
     .map(v => `- ${v.symbol} (${v.name}) en ${v.unit}`)
     .join('\n');
 
-  const _formulasList = (Array.isArray(input.formulas) ? input.formulas : [])
-    .map(f => `- ${f.description}: ${f.latex}`)
-    .join('\n');
-
   // Prompt amélioré avec règles strictes pour formules et expected_answers
   const typeName = input.typeName;
   const prompt = `Tu es un expert en Résistance des Matériaux (RDM). Tu dois générer un exercice pédagogique complet.
