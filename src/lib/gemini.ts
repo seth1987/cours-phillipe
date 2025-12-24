@@ -76,7 +76,7 @@ export async function generateExerciseWithAI(
     .map(v => `- ${v.symbol} (${v.name}) en ${v.unit}`)
     .join('\n');
 
-  const formulasList = (Array.isArray(input.formulas) ? input.formulas : [])
+  const _formulasList = (Array.isArray(input.formulas) ? input.formulas : [])
     .map(f => `- ${f.description}: ${f.latex}`)
     .join('\n');
 
