@@ -65,7 +65,7 @@ export default async function TypesPage() {
                 <div>
                   <h4 className="font-medium mb-2">Formules principales</h4>
                   <div className="space-y-1">
-                    {type.formulas.map((formula, index) => (
+                    {(Array.isArray(type.formulas) ? type.formulas : []).map((formula, index) => (
                       <code
                         key={index}
                         className="block text-sm bg-muted px-2 py-1 rounded"
@@ -78,7 +78,7 @@ export default async function TypesPage() {
                 <div>
                   <h4 className="font-medium mb-2">Variables</h4>
                   <div className="flex flex-wrap gap-2">
-                    {type.variables.map((variable, index) => (
+                    {(Array.isArray(type.variables) ? type.variables : []).map((variable, index) => (
                       <Badge key={index} variant="secondary">
                         {variable}
                       </Badge>

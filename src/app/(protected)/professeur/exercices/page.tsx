@@ -15,8 +15,8 @@ import {
 
 interface Exercise {
   id: string;
-  title: string;
-  status: string;
+  titre: string;
+  statut: string;
   difficulty: string;
   created_at: string;
   rdm_types: {
@@ -34,8 +34,8 @@ async function getExercises() {
     .from('exercises')
     .select(`
       id,
-      title,
-      status,
+      titre,
+      statut,
       difficulty,
       created_at,
       rdm_types (name)
@@ -43,7 +43,7 @@ async function getExercises() {
     .eq('prof_id', user.id)
     .order('created_at', { ascending: false });
 
-  return (data || []).map((ex: Record<string, unknown>) => ({
+  return (Array.isArray(data) ? data : []).map((ex: Record<string, unknown>) => ({
     ...ex,
     rdm_types: Array.isArray(ex.rdm_types) ? ex.rdm_types[0] : ex.rdm_types,
   })) as Exercise[];
@@ -109,11 +109,11 @@ export default async function ExercicesPage() {
               <TableBody>
                 {exercises.map((exercise) => (
                   <TableRow key={exercise.id}>
-                    <TableCell className="font-medium">{exercise.title}</TableCell>
+                    <TableCell className="font-medium">{exercise.titre}</TableCell>
                     <TableCell>{(exercise.rdm_types as { name: string } | null)?.name || '-'}</TableCell>
                     <TableCell>{difficultyLabels[exercise.difficulty]}</TableCell>
                     <TableCell>
-                      <StatusBadge status={exercise.status} />
+                      <StatusBadge status={exercise.statut} />
                     </TableCell>
                     <TableCell>
                       {new Date(exercise.created_at).toLocaleDateString('fr-FR')}

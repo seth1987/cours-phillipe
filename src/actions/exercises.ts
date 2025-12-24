@@ -25,6 +25,10 @@ interface CreateExerciseInput {
 }
 
 export async function createExercise(formData: CreateExerciseInput) {
+  console.log('[CREATE-EXERCISE] === Creating exercise ===');
+  console.log('[CREATE-EXERCISE] Full formData received:', JSON.stringify(formData, null, 2));
+  console.log('[CREATE-EXERCISE] Input rdm_type_slug:', formData.rdm_type_slug);
+
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -37,25 +41,48 @@ export async function createExercise(formData: CreateExerciseInput) {
     return { error: parsed.error.issues[0].message };
   }
 
-  // Lookup rdm_type_id from slug if provided
-  let rdmTypeId: string | null = null;
-  if (formData.rdm_type_slug) {
-    const { data: typeData } = await supabase
-      .from('rdm_types')
-      .select('id')
-      .eq('slug', formData.rdm_type_slug)
-      .single();
-
-    if (typeData) {
-      rdmTypeId = typeData.id;
-    }
+  // Validate that rdm_type_slug is provided (required by database)
+  if (!formData.rdm_type_slug) {
+    console.error('[CREATE-EXERCISE] ERROR: rdm_type_slug is missing!');
+    return { error: 'Le type RDM est obligatoire' };
   }
+
+  // Validate that statement_template is provided (required by database)
+  if (!formData.statement_template) {
+    console.error('[CREATE-EXERCISE] ERROR: statement_template is missing!');
+    return { error: "L'énoncé de l'exercice est obligatoire" };
+  }
+
+  // Lookup rdm_type_id from slug
+  const { data: typeData, error: typeError } = await supabase
+    .from('rdm_types')
+    .select('id')
+    .eq('slug', formData.rdm_type_slug)
+    .single();
+
+  console.log('[CREATE-EXERCISE] Type lookup result:', { typeData, typeError });
+
+  if (typeError || !typeData) {
+    console.error('[CREATE-EXERCISE] ERROR: Type not found for slug:', formData.rdm_type_slug);
+    return { error: `Type RDM "${formData.rdm_type_slug}" introuvable` };
+  }
+
+  const rdmTypeId = typeData.id;
+  console.log('[CREATE-EXERCISE] Using rdm_type_id:', rdmTypeId);
+  console.log('[CREATE-EXERCISE] About to insert with type_id:', rdmTypeId);
 
   const { data, error } = await supabase
     .from('exercises')
     .insert({
       prof_id: user.id,
+      type_id: rdmTypeId,
       rdm_type_id: rdmTypeId,
+      // French column names (required by database NOT NULL constraints)
+      titre: formData.title,
+      enonce: formData.statement_template,
+      plages: formData.variable_ranges,
+      statut: 'brouillon',
+      // English column names (kept for compatibility)
       title: formData.title,
       statement_template: formData.statement_template,
       formulas: formData.formulas,

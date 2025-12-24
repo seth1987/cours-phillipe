@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Skill(init-project)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(powershell -Command \"Get-Content .env.local | ForEach-Object { \\($_-split ''=''\\)[0] }\")",
+      "Bash(powershell -Command \"Get-ChildItem -Force -Filter ''.env*'' | Select-Object Name, Length, LastWriteTime\")",
+      "Bash(powershell -Command \"echo $env:GEMINI_API_KEY\")",
+      "Bash(powershell -Command \"[System.Environment]::GetEnvironmentVariable\\(''GEMINI_API_KEY'', ''User''\\)\")",
+      "Bash(powershell -Command \"[System.Environment]::GetEnvironmentVariable\\(''GEMINI_API_KEY'', ''Machine''\\)\")"
     ]
   }
 }

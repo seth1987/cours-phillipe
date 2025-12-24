@@ -12,7 +12,7 @@ export const createExerciseSchema = z.object({
   title: z.string().min(3).max(200),
   rdm_type_slug: z.string().optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
-  statement_template: z.string().min(10).max(5000),
+  statement_template: z.string().min(10, "L'énoncé doit contenir au moins 10 caractères").max(5000),
   formulas: z.array(z.object({
     name: z.string(),
     formula: z.string(),

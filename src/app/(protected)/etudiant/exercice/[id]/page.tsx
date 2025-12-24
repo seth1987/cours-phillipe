@@ -95,10 +95,10 @@ export default function ExercisePage({ params }: { params: Promise<{ id: string 
     } as ExerciseInstance;
 
     setInstance(inst);
-    setAttempts((attemptsResult.data || []) as Attempt[]);
+    setAttempts((Array.isArray(attemptsResult.data) ? attemptsResult.data : []) as Attempt[]);
 
     // Initialize answers state based on expected answers
-    const expectedAnswers = inst.expected_answer || [];
+    const expectedAnswers = Array.isArray(inst.expected_answer) ? inst.expected_answer : [];
     const initialAnswers: Record<string, string> = {};
     expectedAnswers.forEach((ea: ExpectedAnswer) => {
       initialAnswers[ea.name] = '';
@@ -119,7 +119,7 @@ export default function ExercisePage({ params }: { params: Promise<{ id: string 
     setIsSubmitting(true);
 
     // Validate and convert answers
-    const expectedAnswers = instance?.expected_answer || [];
+    const expectedAnswers = Array.isArray(instance?.expected_answer) ? instance.expected_answer : [];
     const givenAnswers: Array<{ name: string; value: number }> = [];
 
     for (const ea of expectedAnswers) {
@@ -254,7 +254,7 @@ export default function ExercisePage({ params }: { params: Promise<{ id: string 
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {(instance.exercises?.formulas || []).map((formula, index) => (
+            {(Array.isArray(instance.exercises?.formulas) ? instance.exercises.formulas : []).map((formula, index) => (
               <div key={index} className="flex items-center gap-4 p-2 bg-muted rounded">
                 <span className="font-medium">{formula.name}:</span>
                 <Latex formula={formula.formula} />
@@ -292,7 +292,7 @@ export default function ExercisePage({ params }: { params: Promise<{ id: string 
                   <AlertDescription>
                     <div className="font-medium">{result.message}</div>
                     <div className="mt-2 space-y-1">
-                      {result.results.map((r, i) => (
+                      {(Array.isArray(result.results) ? result.results : []).map((r, i) => (
                         <div key={i} className="flex items-center gap-2 text-sm">
                           {r.isCorrect ? (
                             <CheckCircle className="h-3 w-3 text-green-500" />
@@ -403,7 +403,7 @@ export default function ExercisePage({ params }: { params: Promise<{ id: string 
                     </span>
                   </div>
                   <div className="grid gap-1 sm:grid-cols-2 text-sm">
-                    {(attempt.answers_detail || []).map((detail, i) => (
+                    {(Array.isArray(attempt.answers_detail) ? attempt.answers_detail : []).map((detail, i) => (
                       <div key={i} className="flex items-center gap-2">
                         {detail.isCorrect ? (
                           <CheckCircle className="h-3 w-3 text-green-500" />

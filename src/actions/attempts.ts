@@ -36,13 +36,20 @@ export async function submitAnswers(formData: SubmitAnswersInput) {
     return { error: 'Exercice déjà complété' };
   }
 
-  // Parse expected answers from JSONB
-  const expectedAnswers = instance.expected_answer as ExpectedAnswer[];
+  // Parse expected answers from JSONB (with type safety)
+  const rawExpectedAnswers = instance.expected_answer;
+  const expectedAnswers: ExpectedAnswer[] = Array.isArray(rawExpectedAnswers) ? rawExpectedAnswers : [];
+
+  if (expectedAnswers.length === 0) {
+    return { error: 'Aucune réponse attendue configurée pour cet exercice' };
+  }
+
   const result = checkMultipleAnswers(formData.answers, expectedAnswers);
 
   // Calculate average deviation for backwards compatibility
-  const avgDeviation = result.results.length > 0
-    ? result.results.reduce((sum, r) => sum + r.deviation, 0) / result.results.length
+  const resultsArray = Array.isArray(result.results) ? result.results : [];
+  const avgDeviation = resultsArray.length > 0
+    ? resultsArray.reduce((sum, r) => sum + r.deviation, 0) / resultsArray.length
     : 0;
 
   const { data: attempt, error: attemptError } = await supabase

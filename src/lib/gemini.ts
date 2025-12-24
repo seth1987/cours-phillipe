@@ -1,7 +1,47 @@
 import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 import { svgToPngBase64, isValidSvg } from './svg-to-png';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// ============================================================
+// VERSION TRACKING - Change this to confirm code is updated
+// ============================================================
+const GEMINI_LIB_VERSION = 'v3.0-debug-' + Date.now();
+
+console.log('[GEMINI] ====================================');
+console.log('[GEMINI] Library loaded - ' + GEMINI_LIB_VERSION);
+console.log('[GEMINI] Running on:', typeof window === 'undefined' ? 'SERVER' : 'CLIENT');
+console.log('[GEMINI] ====================================');
+
+// Singleton instance - initialized once on first use
+let genAIInstance: GoogleGenerativeAI | null = null;
+
+/**
+ * Get or create the GoogleGenerativeAI singleton instance.
+ * Uses lazy initialization to ensure env var is read at runtime, not module load time.
+ */
+function getGenAI(): GoogleGenerativeAI {
+  console.log('[GEMINI][' + GEMINI_LIB_VERSION + '] === getGenAI() called ===');
+  console.log('[GEMINI] Current genAIInstance:', genAIInstance ? 'EXISTS' : 'NULL');
+  console.log('[GEMINI] Running on:', typeof window === 'undefined' ? 'SERVER' : 'CLIENT');
+  console.log('[GEMINI] GEMINI_API_KEY exists:', !!process.env.GEMINI_API_KEY);
+  console.log('[GEMINI] GEMINI_API_KEY length:', process.env.GEMINI_API_KEY?.length || 0);
+  console.log('[GEMINI] GEMINI_API_KEY first 10 chars:', process.env.GEMINI_API_KEY?.substring(0, 10) || 'EMPTY');
+  console.log('[GEMINI] All env keys containing GEMINI:', Object.keys(process.env).filter(k => k.includes('GEMINI')));
+
+  if (!genAIInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error('[GEMINI][' + GEMINI_LIB_VERSION + '] !!! GEMINI_API_KEY IS EMPTY OR UNDEFINED !!!');
+      console.error('[GEMINI] process.env keys:', Object.keys(process.env).slice(0, 20));
+      throw new Error('GEMINI_API_KEY environment variable is not set');
+    }
+    console.log('[GEMINI][' + GEMINI_LIB_VERSION + '] Creating new GoogleGenerativeAI instance...');
+    genAIInstance = new GoogleGenerativeAI(apiKey);
+    console.log('[GEMINI][' + GEMINI_LIB_VERSION + '] Instance created successfully');
+  } else {
+    console.log('[GEMINI][' + GEMINI_LIB_VERSION + '] Reusing existing instance');
+  }
+  return genAIInstance;
+}
 
 export interface GenerateExerciseInput {
   typeName: string;
@@ -12,135 +52,93 @@ export interface GenerateExerciseInput {
 }
 
 export interface GeneratedExercise {
-  statement: string;
+  enonce: string;
+  variables: Array<{ name: string; min: number; max: number; step: number }>;
+  formulas: Array<{ name: string; formula: string; unit: string }>;
   solution: string;
-  ranges: Record<string, { min: number; max: number; mode: 'libre' | 'palier'; step?: number; decimals?: number }>;
-  expectedAnswers?: string[];
+  expected_answers: Array<{ name: string; formula: string; unit: string; tolerance: number }>;
 }
 
 export async function generateExerciseWithAI(
   input: GenerateExerciseInput
 ): Promise<GeneratedExercise> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  console.log('[GEMINI][' + GEMINI_LIB_VERSION + '] === generateExerciseWithAI() called ===');
+  console.log('[GEMINI] Input typeName:', input.typeName);
+  console.log('[GEMINI] Has schemaSvg:', !!input.schemaSvg);
+  console.log('[GEMINI] schemaSvg length:', input.schemaSvg?.length || 0);
 
-  const variablesList = input.variables
+  const genAI = getGenAI();
+  console.log('[GEMINI] Got genAI instance, getting model...');
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  console.log('[GEMINI] Got model: gemini-2.0-flash');
+
+  const variablesList = (Array.isArray(input.variables) ? input.variables : [])
     .map(v => `- ${v.symbol} (${v.name}) en ${v.unit}`)
     .join('\n');
 
-  const formulasList = input.formulas
+  const formulasList = (Array.isArray(input.formulas) ? input.formulas : [])
     .map(f => `- ${f.description}: ${f.latex}`)
     .join('\n');
 
-  // Prompt avec instructions pour interpréter le schéma visuel
-  const prompt = `Tu es professeur de Résistance des Matériaux (RDM) à l'Université de Bordeaux, département Génie Civil. Tu crées des exercices pour les TD de MS1 (isostatique) et MS2 (hyperstatique).
+  // Prompt amélioré avec règles strictes pour formules et expected_answers
+  const typeName = input.typeName;
+  const prompt = `Tu es un expert en Résistance des Matériaux (RDM). Tu dois générer un exercice pédagogique complet.
 
-## CONTEXTE DE L'EXERCICE
-Type: "${input.typeName}"
-Description: "${input.context}"
+## STRUCTURE ANALYSÉE
+Type: ${typeName}
+Schéma: [Image fournie]
 
-${input.schemaSvg ? `## SCHÉMA DE LA STRUCTURE
-**IMPORTANT** : Une image du schéma est jointe à cette requête. Analyse attentivement ce schéma visuel.
+## VARIABLES AUTORISÉES (STRICTEMENT)
+Tu ne peux utiliser QUE ces variables dans tes formules : ${variablesList || '(aucune variable définie)'}
+❌ INTERDIT : Utiliser des variables non listées (q, F, P, M, etc. si non présentes)
 
-### Conventions graphiques à identifier dans le schéma :
-- **Hachures (lignes parallèles diagonales)** = Encastrement (bloque X, Z et rotation M)
-- **Triangle pointant vers le bas** = Appui simple (bloque Z uniquement)
-- **Cercle avec base** = Articulation/Rotule (bloque X et Z)
-- **Trait horizontal épais** = Poutre/barre
-- **Flèches vers le bas (rouges)** = Forces ponctuelles
-- **Flèches réparties avec "q"** = Charges réparties
-- **Lettres (A, B, C...)** = Points caractéristiques de la structure
+## TA MISSION
+Génère un exercice avec :
+1. **Énoncé** : Problème clair utilisant {variable} pour chaque variable
+2. **Variables** : Plages min/max/pas réalistes pour chaque variable
+3. **Formules de référence** : Formules RDM utiles pour ce type de problème
+4. **Solution** : Résolution complète étape par étape (équilibre statique, équations)
+5. **Réponses attendues** : Les valeurs que l'étudiant doit calculer
 
-**MISSION** : L'exercice généré DOIT correspondre EXACTEMENT à la configuration géométrique visible dans le schéma. Identifie :
-1. Les points d'appui et leur type (encastrement, appui simple, rotule)
-2. Les points d'application des charges
-3. La géométrie (longueurs, positions)
-` : ''}
+## RÈGLE CRITIQUE - RÉPONSES ATTENDUES
+⚠️ Le champ "formula" de chaque réponse attendue DOIT contenir EXACTEMENT l'expression mathématique finale de ta solution.
 
-## CONNAISSANCES RDM REQUISES
+EXEMPLE :
+Si ta solution calcule :
+- "En appliquant l'équilibre : RA = E * alpha * deltaT"
+- "Par symétrie : RB = -E * alpha * deltaT"
 
-### Types d'appuis et réactions associées
-- Appui simple (rotule) : 1 réaction verticale (Z)
-- Appui double (articulation) : 2 réactions (X, Z)
-- Encastrement : 2 réactions + 1 moment (X, Z, M)
-- Appui glissant : 1 réaction perpendiculaire au glissement
+Alors expected_answers DOIT être :
+[
+  { "name": "RA", "formula": "E * alpha * deltaT", "unit": "N", "tolerance": 5 },
+  { "name": "RB", "formula": "-E * alpha * deltaT", "unit": "N", "tolerance": 5 }
+]
 
-### Équations d'équilibre (structure isostatique)
-- ΣFx = 0 (équilibre horizontal)
-- ΣFz = 0 (équilibre vertical)
-- ΣM/A = 0 (équilibre en rotation autour d'un point)
+❌ INTERDIT : { "formula": "q × L / 2" } ou tout autre placeholder
+✅ OBLIGATOIRE : La formula = l'expression finale de ta solution
 
-### Conventions
-- Axe x horizontal vers la droite
-- Axe z vertical vers le haut
-- Moments positifs dans le sens trigonométrique (anti-horaire)
-- Repère local de chaque tronçon = repère global
-
-## CONFIGURATIONS STANDARDS
-
-### Poutre sur 2 appuis (isostatique)
-Points: A (appui double) --- B (appui simple)
-Réponses: XA, ZA, ZB
-
-### Poutre encastrée-libre (console)
-Points: A (encastrement) --- B (libre)
-Réponses: XA, ZA, MA
-
-### Poutre encastrée + appui (hyperstatique degré 1)
-Points: A (encastrement) --- B --- C (appui simple)
-Réponses: XA, ZA, MA, ZC
-
-### Portique simple
-Points: A (encastrement) --- B (noeud) --- C (articulation)
-Avec angle alpha pour les montants inclinés
-Réponses: XA, ZA, MA, XC, ZC
-
-## VARIABLES À UTILISER
-${variablesList}
-
-## FORMULES DISPONIBLES
-${formulasList}
-
-## RÈGLES DE GÉNÉRATION
-
-1. ÉNONCÉ:
-   - Décrire la géométrie clairement (points A, B, C, D)
-   - Préciser chaque appui et son type
-   - Indiquer où s'appliquent les charges
-   - Utiliser {VARIABLE} pour les valeurs numériques
-   - Terminer par "Calculer: XA, ZA, MA..." selon les appuis
-
-2. SOLUTION:
-   - Étape 1: Schéma et données
-   - Étape 2: Équations d'équilibre
-   - Étape 3: Résolution (avec formules littérales)
-   - Étape 4: Vérification (somme des forces = 0)
-
-3. PLAGES DE VALEURS:
-   - Longueurs: min=2, max=10, step=0.5 ou 1
-   - Forces: min=5, max=100, step=5 ou 10
-   - Charges réparties: min=10, max=50, step=5
-   - Angles: min=15, max=75, step=15
-
-4. RÉPONSES ATTENDUES:
-   - Lister TOUTES les inconnues à calculer
-   - Cohérent avec les appuis décrits
-
-## EXEMPLE D'EXERCICE ATTENDU
-
+## FORMAT JSON REQUIS
 {
-  "statement": "Une poutre ABC est encastrée en A et repose sur un appui simple en C. Le tronçon AB de longueur LAB = {LAB} m supporte une charge répartie q = {q} daN/m sur toute sa longueur. Le tronçon BC de longueur LBC = {LBC} m supporte une force ponctuelle F = {F} kN appliquée en son milieu. Déterminer les réactions en A (XA, ZA, MA) et en C (ZC).",
-  "solution": "1) Données: LAB, LBC, q, F\\n2) Équilibre:\\n   ΣFx = 0 → XA = 0\\n   ΣFz = 0 → ZA + ZC = q×LAB + F\\n   ΣM/A = 0 → ZC×(LAB+LBC) = q×LAB×(LAB/2) + F×(LAB+LBC/2)\\n3) Résolution: ZC = ..., puis ZA = ...\\n4) Calcul MA par équilibre des moments",
-  "ranges": {
-    "LAB": {"min": 2, "max": 6, "mode": "palier", "step": 1},
-    "LBC": {"min": 2, "max": 6, "mode": "palier", "step": 1},
-    "q": {"min": 10, "max": 40, "mode": "palier", "step": 10},
-    "F": {"min": 10, "max": 50, "mode": "palier", "step": 10}
-  },
-  "expectedAnswers": ["XA", "ZA", "MA", "ZC"]
+  "enonce": "Texte avec {variables} entre accolades",
+  "variables": [
+    { "name": "L", "min": 1, "max": 5, "step": 1 }
+  ],
+  "formulas": [
+    { "name": "Contrainte thermique", "formula": "sigma = E * alpha * deltaT", "unit": "Pa" }
+  ],
+  "solution": "Résolution détaillée étape par étape...",
+  "expected_answers": [
+    { "name": "RA", "formula": "E * alpha * deltaT", "unit": "N", "tolerance": 5 }
+  ]
 }
 
-## SORTIE
-Réponds UNIQUEMENT avec un objet JSON valide (sans markdown, sans backticks, sans commentaires).`;
+## VÉRIFICATION FINALE
+Avant de répondre, vérifie que :
+✓ Chaque formula dans expected_answers apparaît dans ta solution
+✓ Aucune variable non autorisée n'est utilisée
+✓ Les formules sont des expressions calculables, pas des descriptions
+
+Réponds UNIQUEMENT avec le JSON, sans texte autour.`;
 
   // Préparer le contenu pour Gemini (multimodal si schéma présent)
   let content: (string | Part)[];

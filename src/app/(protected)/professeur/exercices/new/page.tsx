@@ -213,8 +213,8 @@ export default function NewExercisePage() {
     try {
       const result = await generateExercise({
         typeName: selectedType.name,
-        variables: selectedType.variables || [],
-        formulas: selectedType.formulas || [],
+        variables: Array.isArray(selectedType.variables) ? selectedType.variables : [],
+        formulas: Array.isArray(selectedType.formulas) ? selectedType.formulas : [],
         context: title || 'exercice de niveau universitaire',
         typeSlug: rdmType,
       });
@@ -230,29 +230,35 @@ export default function NewExercisePage() {
           setTitle(`Exercice ${selectedType.name}`);
         }
 
-        // Update statement
-        setStatementTemplate(result.data.statement);
+        // Update statement (new field name: enonce)
+        setStatementTemplate(result.data.enonce);
 
         // Update solution
         if (result.data.solution) {
           setSolution(result.data.solution);
         }
 
-        // Convert ranges to visual table format
-        if (result.data.ranges) {
-          const newRanges: VariableRange[] = Object.entries(result.data.ranges).map(([variable, config]) => ({
-            variable,
-            min: config.min,
-            max: config.max,
-            step: config.step || 1,
+        // Convert variables array to visual table format (new format: array instead of object)
+        if (Array.isArray(result.data.variables) && result.data.variables.length > 0) {
+          const newRanges: VariableRange[] = result.data.variables.map(v => ({
+            variable: v.name,
+            min: v.min,
+            max: v.max,
+            step: v.step || 1,
           }));
-          if (newRanges.length > 0) {
-            setVariableRanges(newRanges);
-          }
+          setVariableRanges(newRanges);
         }
 
-        // Convert formulas from selected type
-        if (selectedType.formulas && selectedType.formulas.length > 0) {
+        // Convert formulas from AI response (new: AI generates formulas)
+        if (Array.isArray(result.data.formulas) && result.data.formulas.length > 0) {
+          const newFormulas: FormulaConfig[] = result.data.formulas.map(f => ({
+            name: f.name,
+            formula: f.formula,
+            unit: f.unit || '-',
+          }));
+          setFormulas(newFormulas);
+        } else if (Array.isArray(selectedType.formulas) && selectedType.formulas.length > 0) {
+          // Fallback to type formulas if AI didn't provide any
           const newFormulas: FormulaConfig[] = selectedType.formulas.map(f => ({
             name: f.name,
             formula: f.latex,
@@ -261,13 +267,13 @@ export default function NewExercisePage() {
           setFormulas(newFormulas);
         }
 
-        // Convert expected answers from AI response
-        if (result.data.expectedAnswers && result.data.expectedAnswers.length > 0) {
-          const newAnswers: ExpectedAnswerConfig[] = result.data.expectedAnswers.map(name => ({
-            name,
-            formula: '',
-            unit: 'kN ou kN.m',
-            tolerance: 5,
+        // Convert expected answers from AI response (new format: objects with formula field)
+        if (Array.isArray(result.data.expected_answers) && result.data.expected_answers.length > 0) {
+          const newAnswers: ExpectedAnswerConfig[] = result.data.expected_answers.map(a => ({
+            name: a.name,
+            formula: a.formula,
+            unit: a.unit || 'kN ou kN.m',
+            tolerance: a.tolerance || 5,
           }));
           setExpectedAnswers(newAnswers);
         }
@@ -286,6 +292,16 @@ export default function NewExercisePage() {
     e.preventDefault();
     setError('');
     setIsLoading(true);
+
+    // Validate required type selection
+    if (!rdmType) {
+      setError('Veuillez sélectionner un type RDM');
+      setIsLoading(false);
+      return;
+    }
+
+    console.log('[NEW-EXERCISE] Submitting with rdmType:', rdmType);
+    console.log('[NEW-EXERCISE] selectedType:', selectedType);
 
     try {
       // Convert visual tables to the format expected by the API
