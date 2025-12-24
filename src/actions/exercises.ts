@@ -1,0 +1,319 @@
+'use server';
+
+import { createClient } from '@/lib/supabase/server';
+import { revalidatePath } from 'next/cache';
+import { createExerciseSchema, updateExerciseSchema } from '@/lib/validation/schemas';
+
+interface ExpectedAnswerConfig {
+  name: string;
+  formula: string;
+  unit: string;
+  tolerance: number;
+}
+
+interface CreateExerciseInput {
+  title: string;
+  rdm_type_slug?: string;  // Slug du type RDM (sera converti en UUID)
+  difficulty: 'easy' | 'medium' | 'hard';
+  statement_template: string;
+  formulas: Array<{ name: string; formula: string; unit: string }>;
+  variable_ranges: Record<string, { min: number; max: number; step?: number }>;
+  tolerance_percent: number;
+  image_url?: string;
+  expected_answers?: ExpectedAnswerConfig[];
+  solution?: string;
+}
+
+export async function createExercise(formData: CreateExerciseInput) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: 'Non authentifié' };
+  }
+
+  const parsed = createExerciseSchema.safeParse(formData);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0].message };
+  }
+
+  // Lookup rdm_type_id from slug if provided
+  let rdmTypeId: string | null = null;
+  if (formData.rdm_type_slug) {
+    const { data: typeData } = await supabase
+      .from('rdm_types')
+      .select('id')
+      .eq('slug', formData.rdm_type_slug)
+      .single();
+
+    if (typeData) {
+      rdmTypeId = typeData.id;
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('exercises')
+    .insert({
+      prof_id: user.id,
+      rdm_type_id: rdmTypeId,
+      title: formData.title,
+      statement_template: formData.statement_template,
+      formulas: formData.formulas,
+      variable_ranges: formData.variable_ranges,
+      tolerance_percent: formData.tolerance_percent,
+      difficulty: formData.difficulty,
+      status: 'draft',
+      image_url: formData.image_url || null,
+      expected_answers: formData.expected_answers || null,
+      solution: formData.solution || null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath('/professeur/exercices');
+  return { data };
+}
+
+export async function updateExercise(formData: unknown) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: 'Non authentifié' };
+  }
+
+  const parsed = updateExerciseSchema.safeParse(formData);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0].message };
+  }
+
+  const { id, ...updates } = parsed.data;
+
+  const { data: exercise } = await supabase
+    .from('exercises')
+    .select('status, prof_id')
+    .eq('id', id)
+    .single();
+
+  if (!exercise || exercise.prof_id !== user.id) {
+    return { error: 'Exercice non trouvé' };
+  }
+
+  if (exercise.status === 'published' || exercise.status === 'archived') {
+    return { error: 'Impossible de modifier un exercice publié' };
+  }
+
+  const { data, error } = await supabase
+    .from('exercises')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath(`/professeur/exercices/${id}`);
+  return { data };
+}
+
+export async function validateExercise(id: string) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: 'Non authentifié' };
+  }
+
+  const { data: exercise } = await supabase
+    .from('exercises')
+    .select('status, prof_id')
+    .eq('id', id)
+    .single();
+
+  if (!exercise || exercise.prof_id !== user.id) {
+    return { error: 'Exercice non trouvé' };
+  }
+
+  if (exercise.status !== 'draft') {
+    return { error: 'Seul un brouillon peut être validé' };
+  }
+
+  const { data, error } = await supabase
+    .from('exercises')
+    .update({ status: 'validated' })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath(`/professeur/exercices/${id}`);
+  return { data };
+}
+
+export async function publishExercise(id: string) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: 'Non authentifié' };
+  }
+
+  const { data: exercise } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (!exercise || exercise.prof_id !== user.id) {
+    return { error: 'Exercice non trouvé' };
+  }
+
+  if (exercise.status !== 'validated') {
+    return { error: 'Seul un exercice validé peut être publié' };
+  }
+
+  const { data, error } = await supabase
+    .from('exercises')
+    .update({ status: 'published' })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath('/professeur/exercices');
+  revalidatePath(`/professeur/exercices/${id}`);
+  return { data };
+}
+
+export async function archiveExercise(id: string) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: 'Non authentifié' };
+  }
+
+  const { data: exercise } = await supabase
+    .from('exercises')
+    .select('status, prof_id')
+    .eq('id', id)
+    .single();
+
+  if (!exercise || exercise.prof_id !== user.id) {
+    return { error: 'Exercice non trouvé' };
+  }
+
+  if (exercise.status !== 'published') {
+    return { error: 'Seul un exercice publié peut être archivé' };
+  }
+
+  const { data, error } = await supabase
+    .from('exercises')
+    .update({ status: 'archived' })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath('/professeur/exercices');
+  return { data };
+}
+
+export async function deleteExercise(id: string) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: 'Non authentifié' };
+  }
+
+  const { data: exercise } = await supabase
+    .from('exercises')
+    .select('status, prof_id')
+    .eq('id', id)
+    .single();
+
+  if (!exercise || exercise.prof_id !== user.id) {
+    return { error: 'Exercice non trouvé' };
+  }
+
+  if (exercise.status !== 'draft') {
+    return { error: 'Seul un brouillon peut être supprimé' };
+  }
+
+  const { error } = await supabase
+    .from('exercises')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath('/professeur/exercices');
+  return { success: true };
+}
+
+export async function getExercises(status?: string) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: 'Non authentifié' };
+  }
+
+  let query = supabase
+    .from('exercises')
+    .select('*, rdm_types(name)')
+    .eq('prof_id', user.id)
+    .order('created_at', { ascending: false });
+
+  if (status) {
+    query = query.eq('status', status);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { data };
+}
+
+export async function getExercise(id: string) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: 'Non authentifié' };
+  }
+
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('*, rdm_types(*)')
+    .eq('id', id)
+    .eq('prof_id', user.id)
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { data };
+}
