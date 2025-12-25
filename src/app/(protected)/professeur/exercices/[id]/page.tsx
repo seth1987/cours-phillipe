@@ -9,8 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { StatusBadge } from '@/components/exercises/status-badge';
-import { validateExercise, publishExercise, deleteExercise } from '@/actions/exercises';
-import { ArrowLeft, Trash2, CheckCircle, Globe, Save, Plus, X } from 'lucide-react';
+import { validateExercise, publishExercise, deleteExercise, archiveExercise } from '@/actions/exercises';
+import { ArrowLeft, Trash2, CheckCircle, Globe, Save, Plus, X, Archive, Calendar, Eye } from 'lucide-react';
 import Link from 'next/link';
 
 interface VariableRange {
@@ -33,6 +33,8 @@ interface Exercise {
   created_at: string;
   type_id: string | null;
   rdm_types: { name: string; schema_svg?: string } | null;
+  deadline: string | null;
+  show_correction_after_archive: boolean;
 }
 
 const difficultyLabels: Record<string, string> = {
@@ -58,6 +60,8 @@ export default function ExerciseDetailPage() {
   const [solution, setSolution] = useState('');
   const [variableRanges, setVariableRanges] = useState<VariableRange[]>([]);
   const [schemaSvg, setSchemaSvg] = useState<string | null>(null);
+  const [deadline, setDeadline] = useState<string>('');
+  const [showCorrection, setShowCorrection] = useState(false);
 
   useEffect(() => {
     async function fetchExercise() {
@@ -76,6 +80,8 @@ export default function ExerciseDetailPage() {
           expected_answers,
           created_at,
           type_id,
+          deadline,
+          show_correction_after_archive,
           rdm_types!type_id (name, schema_svg)
         `)
         .eq('id', params.id)
@@ -101,6 +107,12 @@ export default function ExerciseDetailPage() {
         setDifficulty(normalizedData.difficulty || 'medium');
         setSolution(normalizedData.solution || '');
         setSchemaSvg(normalizedData.rdm_types?.schema_svg || null);
+
+        // Initialize deadline and correction options
+        if (normalizedData.deadline) {
+          setDeadline(new Date(normalizedData.deadline).toISOString().slice(0, 16));
+        }
+        setShowCorrection(normalizedData.show_correction_after_archive || false);
 
         // Convert plages to array
         if (normalizedData.plages) {
@@ -143,14 +155,25 @@ export default function ExerciseDetailPage() {
         difficulty,
         solution,
         plages,
+        deadline: deadline ? new Date(deadline).toISOString() : null,
+        show_correction_after_archive: showCorrection,
       })
       .eq('id', exercise.id);
 
     if (updateError) {
       setError(updateError.message);
     } else {
-      setSuccess('Exercice mis a jour avec succes');
-      setExercise({ ...exercise, titre, enonce, difficulty, solution, plages });
+      setSuccess('Exercice mis à jour avec succès');
+      setExercise({
+        ...exercise,
+        titre,
+        enonce,
+        difficulty,
+        solution,
+        plages,
+        deadline: deadline ? new Date(deadline).toISOString() : null,
+        show_correction_after_archive: showCorrection,
+      });
       setIsEditing(false);
     }
     setActionLoading(false);
@@ -180,6 +203,21 @@ export default function ExerciseDetailPage() {
     } else {
       setExercise({ ...exercise, statut: 'publie' });
       setSuccess('Exercice publie');
+    }
+    setActionLoading(false);
+  };
+
+  const handleArchive = async () => {
+    if (!exercise) return;
+    if (!confirm('Archiver cet exercice ? Il ne sera plus accessible aux étudiants.')) return;
+    setActionLoading(true);
+    setError('');
+    const result = await archiveExercise(exercise.id);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setExercise({ ...exercise, statut: 'archive' });
+      setSuccess('Exercice archivé');
     }
     setActionLoading(false);
   };
@@ -447,6 +485,69 @@ export default function ExerciseDetailPage() {
           </CardContent>
         </Card>
 
+        {/* Options d'archivage */}
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Options d&apos;archivage
+            </CardTitle>
+            <CardDescription>
+              Configurez la date limite et l&apos;affichage de la correction
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="deadline">Date limite (optionnelle)</Label>
+                {isEditing ? (
+                  <Input
+                    id="deadline"
+                    type="datetime-local"
+                    value={deadline}
+                    onChange={(e) => setDeadline(e.target.value)}
+                  />
+                ) : (
+                  <p className="text-sm">
+                    {exercise.deadline
+                      ? new Date(exercise.deadline).toLocaleString('fr-FR')
+                      : 'Aucune date limite'}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  L&apos;exercice sera archivé automatiquement après cette date
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Eye className="h-4 w-4" />
+                  Afficher la correction après archivage
+                </Label>
+                {isEditing ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="showCorrection"
+                      checked={showCorrection}
+                      onChange={(e) => setShowCorrection(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <Label htmlFor="showCorrection" className="text-sm font-normal">
+                      Oui, montrer la solution aux étudiants
+                    </Label>
+                  </div>
+                ) : (
+                  <p className="text-sm">
+                    {exercise.show_correction_after_archive
+                      ? '✓ La correction sera visible après archivage'
+                      : '✗ La correction restera masquée'}
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Reponses attendues */}
         {exercise.expected_answers && exercise.expected_answers.length > 0 && (
           <Card className="md:col-span-2">
@@ -507,7 +608,16 @@ export default function ExerciseDetailPage() {
             </Button>
           )}
           {exercise.statut === 'publie' && (
-            <p className="text-green-600">Cet exercice est publie et visible par les etudiants.</p>
+            <>
+              <p className="text-green-600">Cet exercice est publié et visible par les étudiants.</p>
+              <Button variant="outline" onClick={handleArchive} disabled={actionLoading}>
+                <Archive className="h-4 w-4 mr-2" />
+                Archiver
+              </Button>
+            </>
+          )}
+          {exercise.statut === 'archive' && (
+            <p className="text-muted-foreground">Cet exercice est archivé et n&apos;est plus accessible aux étudiants.</p>
           )}
         </CardContent>
       </Card>
