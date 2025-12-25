@@ -98,8 +98,13 @@ export async function createExercise(formData: CreateExerciseInput) {
     .single();
 
   if (error) {
+    console.error('[CREATE-EXERCISE] INSERT ERROR:', error.message);
+    console.error('[CREATE-EXERCISE] Error details:', JSON.stringify(error, null, 2));
     return { error: error.message };
   }
+
+  console.log('[CREATE-EXERCISE] SUCCESS! Created exercise:', data?.id);
+  console.log('[CREATE-EXERCISE] Returned data:', JSON.stringify(data, null, 2));
 
   revalidatePath('/professeur/exercices');
   return { data };
@@ -122,7 +127,7 @@ export async function updateExercise(formData: unknown) {
 
   const { data: exercise } = await supabase
     .from('exercises')
-    .select('status, prof_id')
+    .select('statut, prof_id')
     .eq('id', id)
     .single();
 
@@ -130,7 +135,7 @@ export async function updateExercise(formData: unknown) {
     return { error: 'Exercice non trouvé' };
   }
 
-  if (exercise.status === 'published' || exercise.status === 'archived') {
+  if (exercise.statut === 'publie' || exercise.statut === 'archive') {
     return { error: 'Impossible de modifier un exercice publié' };
   }
 
@@ -159,7 +164,7 @@ export async function validateExercise(id: string) {
 
   const { data: exercise } = await supabase
     .from('exercises')
-    .select('status, prof_id')
+    .select('statut, prof_id')
     .eq('id', id)
     .single();
 
@@ -167,13 +172,13 @@ export async function validateExercise(id: string) {
     return { error: 'Exercice non trouvé' };
   }
 
-  if (exercise.status !== 'draft') {
+  if (exercise.statut !== 'brouillon') {
     return { error: 'Seul un brouillon peut être validé' };
   }
 
   const { data, error } = await supabase
     .from('exercises')
-    .update({ status: 'validated' })
+    .update({ statut: 'valide' })
     .eq('id', id)
     .select()
     .single();
@@ -196,7 +201,7 @@ export async function publishExercise(id: string) {
 
   const { data: exercise } = await supabase
     .from('exercises')
-    .select('*')
+    .select('statut, prof_id')
     .eq('id', id)
     .single();
 
@@ -204,13 +209,13 @@ export async function publishExercise(id: string) {
     return { error: 'Exercice non trouvé' };
   }
 
-  if (exercise.status !== 'validated') {
+  if (exercise.statut !== 'valide') {
     return { error: 'Seul un exercice validé peut être publié' };
   }
 
   const { data, error } = await supabase
     .from('exercises')
-    .update({ status: 'published' })
+    .update({ statut: 'publie' })
     .eq('id', id)
     .select()
     .single();
@@ -234,7 +239,7 @@ export async function archiveExercise(id: string) {
 
   const { data: exercise } = await supabase
     .from('exercises')
-    .select('status, prof_id')
+    .select('statut, prof_id')
     .eq('id', id)
     .single();
 
@@ -242,13 +247,13 @@ export async function archiveExercise(id: string) {
     return { error: 'Exercice non trouvé' };
   }
 
-  if (exercise.status !== 'published') {
+  if (exercise.statut !== 'publie') {
     return { error: 'Seul un exercice publié peut être archivé' };
   }
 
   const { data, error } = await supabase
     .from('exercises')
-    .update({ status: 'archived' })
+    .update({ statut: 'archive' })
     .eq('id', id)
     .select()
     .single();
@@ -271,7 +276,7 @@ export async function deleteExercise(id: string) {
 
   const { data: exercise } = await supabase
     .from('exercises')
-    .select('status, prof_id')
+    .select('statut, prof_id')
     .eq('id', id)
     .single();
 
@@ -279,7 +284,7 @@ export async function deleteExercise(id: string) {
     return { error: 'Exercice non trouvé' };
   }
 
-  if (exercise.status !== 'draft') {
+  if (exercise.statut !== 'brouillon') {
     return { error: 'Seul un brouillon peut être supprimé' };
   }
 

@@ -26,11 +26,13 @@ interface Exercise {
 
 async function getExercises() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  console.log('[DEBUG] user:', user?.id, user?.email, 'error:', userError?.message);
 
   if (!user) return [];
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('exercises')
     .select(`
       id,
@@ -38,10 +40,16 @@ async function getExercises() {
       statut,
       difficulty,
       created_at,
-      rdm_types (name)
+      rdm_types!type_id (name)
     `)
     .eq('prof_id', user.id)
     .order('created_at', { ascending: false });
+
+  console.log('[DEBUG] exercises query error:', error?.message);
+  console.log('[DEBUG] exercises data:', data?.length, 'for user:', user.id);
+  if (data && data.length > 0) {
+    console.log('[DEBUG] First exercise:', JSON.stringify(data[0], null, 2));
+  }
 
   return (Array.isArray(data) ? data : []).map((ex: Record<string, unknown>) => ({
     ...ex,
